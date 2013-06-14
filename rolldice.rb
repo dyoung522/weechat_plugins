@@ -76,7 +76,7 @@ class Rolldice
     include Weechat
 
     PROGNAME = 'Rolldice'
-    VERSION = '1.5'
+    VERSION = '1.5.2'
     DEBUG = true
 
     ## Register component
@@ -195,7 +195,7 @@ class Rolldice
         return WEECHAT_RC_OK
 
     rescue => err
-        self.disable "%s, %s" % [ err.class.name, err.message ]
+        self.disable "%s, %s" % [ err.class.name, err.message ] unless DEBUG
         return WEECHAT_RC_OK
     end
 
@@ -290,14 +290,11 @@ class Rolldice
     ### Quick wrapper for sending info messages to the weechat main buffer.
     ###
     def print_info( msg )
-        Weechat.print '', "%sROLL\t%s" % [
-                Weechat.color('yellow'),
-                msg
-        ]
+        Weechat.print '', "%sROLL\t%s" % [ Weechat.color('yellow'), msg ]
     end
 
     def print( msg )
-        Weechat.print( Weechat.current_buffer(), msg )
+        Weechat.print Weechat.current_buffer(), "%s***\t%s%s" % [ Weechat.color('yellow'), Weechat.color('white'), msg ]
     end
 end
 
