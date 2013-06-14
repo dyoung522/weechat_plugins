@@ -45,9 +45,14 @@
 #       The command we should listen for and auto_respond to
 #       Default: "!roll"
 #
-#   plugins.var.ruby.rolldice.ignore_filter
+#   plugins.var.ruby.rolldice.ignore_nicks
 #
-#       Comma separated list of regex to ignore in buffer input (only useful if auto_respond is true)
+#       Comma separated list of nicks to ignore in buffer input (only useful if auto_respond is true)
+#       Default: ""
+#
+#   plugins.var.ruby.rolldice.ignore_channels
+#
+#       Comma separated list of channels to ignore in buffer input (only useful if auto_respond is true)
 #       Default: ""
 #
 
@@ -76,7 +81,7 @@ class Rolldice
     include Weechat
 
     PROGNAME = 'Rolldice'
-    VERSION = '1.5.2'
+    VERSION = '1.6.2'
     DEBUG = true
 
     ## Register component
@@ -115,7 +120,8 @@ class Rolldice
             :auto_respond           => [ 'off'  , 'Should we auto respond to trigger command?' ],
             :auto_respond_when_away => [ 'off'  , 'Should we auto respond when away?' ],
             :auto_respond_trigger   => [ '!roll', 'The command we should listen for -- be careful what you use!' ],
-            :ignore_filter          => [ ''     , 'Regex of things to ignore (Nicks, etc) when auto responding' ]
+            :ignore_nicks           => [ ''     , 'comma separated list of nicks to ignore when auto responding' ],
+            :ignore_channels        => [ ''     , 'comma separated list of channels to ignore when auto responding' ]
     }
 
 
@@ -159,6 +165,7 @@ class Rolldice
     def config_changed( data, option, new_value )
         option = option.match( /\.(\w+)$/ )[1]
         new_value.extend( Truthy )
+        self.print_info "Setting value '%s' to %p" % [ option, new_value ] if DEBUG
         instance_variable_set( "@#{option}".to_sym, new_value )
         return WEECHAT_RC_OK
     end
@@ -172,24 +179,50 @@ class Rolldice
         return WEECHAT_RC_OK unless self.enabled.true?
         return WEECHAT_RC_OK unless self.auto_respond.true?
 
+        # Build our ignore filters array (depending on if multiple enteries were given)
+        filter_nicks = self.ignore_nicks =~ /,/ ? self.ignore_nicks.split(',') : [ self.ignore_nicks ]
+        filter_channels = self.ignore_channels =~ /,/ ? self.ignore_channels.split(',') : [ self.ignore_channels ]
+
+        # Build tags array
+        tags = tags.split(',')
+
+        #if DEBUG
+        #    self.print_info "DATA: #{data}"
+        #    self.print_info "DATE: #{date}"
+        #    self.print_info "visible: #{visible}"
+        #    self.print_info "highlight: #{highlight}"
+        #    self.print_info "prefix: #{prefix}"
+        #    self.print_info "message: #{message}"
+        #    self.print_info "TAGS: #{tags}"
+        #    self.print_info "filters: Nicks:    #{filter_nicks}"
+        #    self.print_info "         Channels: #{filter_channels}"
+        #end
+
+        return WEECHAT_RC_OK unless tags[0] == 'irc_privmsg'
+
         # Should we respond when away?
         away = (Weechat.buffer_get_string( buffer, "localvar_away" )).empty? ? false : true
         return WEECHAT_RC_OK if away && !self.auto_respond_when_away.true?
 
-        # Are we specifically ignoring this message?
-        filters = self.ignore_filter.split( ',' )
-        filters.each.to_s do |filter|
-            if message =~ /#{filter}/
-                self.print_info "Ignorning %s" % [ filter ]
-                return WEECHAT_RC_OK
-            end
-        end
-
         # Look for the trigger
         if message =~ /^#{self.auto_respond_trigger}\b/
+
+            # Are we specifically ignoring this user?
+            filter_nicks.each do |filter|
+                next if filter.empty?
+                if prefix =~ /#{filter}/i
+                    self.print buffer, "Ignorning autoroll request from %s (matching %s)" % [ prefix, filter ] if DEBUG
+                    return WEECHAT_RC_OK
+                end
+            end
+
+            # GTG - Roll 'em
             dice = message.split[1] || self.die
-            self.print "Auto-Rolling %s" % [ dice ]
-            Weechat.command buffer, self.roll_die( dice )
+
+            self.print buffer, "Auto-Rolling %s" % [ dice ]
+
+            roll = self.roll_die( dice, buffer )
+            Weechat.command( buffer, roll ) if roll
         end
 
         return WEECHAT_RC_OK
@@ -202,11 +235,11 @@ class Rolldice
 
     ### Roll random dice
     ###
-
-    def rollem( data, buffer, args )
+    def rollem( data, buffer, dice )
         return WEECHAT_RC_OK unless self.enabled.true?
 
-        Weechat.command Weechat.current_buffer(), self.roll_die( args )
+        roll = self.roll_die( dice, buffer )
+        Weechat.command( Weechat.current_buffer(), roll ) if roll
 
         return WEECHAT_RC_OK
     end
@@ -215,12 +248,19 @@ class Rolldice
     ### I N S T A N C E   M E T H O D S
     ########################################################################
 
-    def roll_die( diceset )
+    def roll_die( diceset, buffer )
         diceset = self.die if diceset.empty?
+        buffer ||= Weechat.current_buffer()
         score_message = ''
         score = 0
 
         set = diceset.match( /(\d*)d(\d*)(([+-]\d+)|(%))?/ )
+        if set.nil?
+            self.print buffer, "Invalid dice set recieved: #{diceset}"
+            return
+        end
+
+        # parse parameters
         ( throws, sides, modifier ) = set[1..3]
 
         # Parse modifier into it's components
@@ -233,15 +273,19 @@ class Rolldice
         throws = throws.to_i
         throws = 1 if throws <= 0
         if throws > 100
-            self.print "Too many throws, try a number between 1 and 100"
+            self.print buffer, "Too many throws, try a number between 1 and 100"
             return
         end
 
         sides  = sides.to_i
         sides  = 100 if sides <= 0
+        if sides > 1000000
+            self.print buffer, "You're crazy, I'm not going to do that."
+            return
+        end
 
         # Print a message only to the local screen, describing what we're about to do
-        self.print "Rolling %i of d%i %s" % [ throws, sides, modifier ]
+        self.print buffer, "Rolling %i of d%i %s" % [ throws, sides, modifier ]
 
         # Generate the random rolls
         results = throws.times.map{ 1 + Random.rand(sides) }
@@ -269,7 +313,7 @@ class Rolldice
             end
         end
         # Format the final message back to the buffer
-        score_message += "%s%s" % [ ( op == '%' && throws == 1 ) ? '' : '=', score ]
+        score_message += "%s%s" % [ ( op == '%' && throws == 1 ) ? '' : '= ', score ]
 
         # Return the result string
         return score_message
@@ -293,8 +337,8 @@ class Rolldice
         Weechat.print '', "%sROLL\t%s" % [ Weechat.color('yellow'), msg ]
     end
 
-    def print( msg )
-        Weechat.print Weechat.current_buffer(), "%s***\t%s%s" % [ Weechat.color('yellow'), Weechat.color('white'), msg ]
+    def print( buffer, msg )
+        Weechat.print buffer, "%s***\t%s%s" % [ Weechat.color('yellow'), Weechat.color('white'), msg ]
     end
 end
 
