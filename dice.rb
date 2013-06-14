@@ -4,7 +4,7 @@
 # Thanks To Mahlon E. Smith <mahlon@martini.nu>
 #   I used his amqp_notify.rb script as a ruby example for weechat script coding.  So, thank you Mahlon!
 #
-# Rolldice
+# Dice
 # ----
 #
 # Rolls a set of dice as provided, returning the result.
@@ -15,42 +15,42 @@
 #   Load into Weechat like any other script, after putting it into
 #   your ~/.weechat/ruby directory:
 #
-#        /ruby load rolldice.rb
+#        /ruby load dice.rb
 #
 # Options:
 # --------
 #
-#   plugins.var.ruby.rolldice.enabled
+#   plugins.var.ruby.dice.enabled
 #
 #       A global on/off toggle.
 #       Default: "on"
 #
-#   plugins.var.ruby.rolldice.dice
+#   plugins.var.ruby.dice.dice
 #
 #       The default dice set to use when none are given
 #       Default: "2d10%" (2d10 in percentage format)
 #
-#   plugins.var.ruby.rolldice.auto_respond
+#   plugins.var.ruby.dice.auto_respond
 #
 #       Should we auto-respond to !roll from others (bot-like action)?
 #       Default: "off"
 #
-#   plugins.var.ruby.rolldice.auto_respond_when_away
+#   plugins.var.ruby.dice.auto_respond_when_away
 #
 #       If auto_respond is enabled, should we still respond while we're marked away?
 #       Default: "off"
 #
-#   plugins.var.ruby.rolldice.auto_respond_trigger
+#   plugins.var.ruby.dice.auto_respond_trigger
 #
 #       The command we should listen for and auto_respond to
 #       Default: "!roll"
 #
-#   plugins.var.ruby.rolldice.ignore_nicks
+#   plugins.var.ruby.dice.ignore_nicks
 #
 #       Comma separated list of nicks to ignore in buffer input (only useful if auto_respond is true)
 #       Default: ""
 #
-#   plugins.var.ruby.rolldice.ignore_channels
+#   plugins.var.ruby.dice.ignore_channels
 #
 #       Comma separated list of channels to ignore in buffer input (only useful if auto_respond is true)
 #       Default: ""
@@ -77,11 +77,11 @@ end
 
 ### The actual Weechat script.
 ###
-class Rolldice
+class Dice
     include Weechat
 
-    PROGNAME = 'Rolldice'
-    VERSION = '1.6.2'
+    PROGNAME = 'Dice'
+    VERSION = '1.7'
     DEBUG = true
 
     ## Register component
@@ -96,7 +96,7 @@ class Rolldice
     ]
 
     ## Roll command component
-    ROLL = [
+    COMMAND_ROLL = [
             'roll',
             'Generates a random result based upon the given dice set',
             '[dice]',
@@ -334,7 +334,7 @@ class Rolldice
     ### Quick wrapper for sending info messages to the weechat main buffer.
     ###
     def print_info( msg )
-        Weechat.print '', "%sROLL\t%s" % [ Weechat.color('yellow'), msg ]
+        Weechat.print '', "%sDICE\t%s" % [ Weechat.color('yellow'), msg ]
     end
 
     def print( buffer, msg )
@@ -349,22 +349,22 @@ end
 def weechat_init
     require 'rubygems'
 
-    Weechat::register *Rolldice::SIGNATURE
-    $dice = Rolldice.new
+    Weechat::register *Dice::SIGNATURE
+    $dice = Dice.new
 
-    Weechat.hook_command *Rolldice::ROLL
-    Weechat.hook_config( 'plugins.var.ruby.rolldice.*', 'config_changed', '' )
+    Weechat.hook_command *Dice::COMMAND_ROLL
+    Weechat.hook_config( 'plugins.var.ruby.dice.*', 'config_changed', '' )
     Weechat.hook_print( '', '', '', 1, 'check_buffer', '' )
 
     return Weechat::WEECHAT_RC_OK
 
 rescue LoadError => err
-    Weechat.print '', "rolldice: %s, %s\n$LOAD_PATH: %p" % [
+    Weechat.print '', "dice: %s, %s\n$LOAD_PATH: %p" % [
             err.class.name,
             err.message,
             $LOAD_PATH
     ]
-    Weechat.print '', 'rolldice: Unable to initialize due to missing dependencies.'
+    Weechat.print '', 'dice: Unable to initialize due to missing dependencies.'
     return Weechat::WEECHAT_RC_ERROR
 end
 
