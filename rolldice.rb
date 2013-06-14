@@ -1,7 +1,4 @@
-# vim: set noet nosta sw=4 ts=4 :
-#
-# Donovan C. Young <dyoung522@gmail.com>
-# http://www.DonovanYoung.com
+# Donovan C. Young <dyoung522@gmail.com> # http://www.DonovanYoung.com
 # (See below for LICENSE.)
 #
 # Thanks To Mahlon E. Smith <mahlon@martini.nu>
@@ -18,7 +15,7 @@
 #   Load into Weechat like any other script, after putting it into
 #   your ~/.weechat/ruby directory:
 #
-#        /ruby load amqp_notify.rb
+#        /ruby load rolldice.rb
 #
 # Options:
 # --------
@@ -78,26 +75,47 @@ end
 class Rolldice
     include Weechat
 
-    DEBUG = false
+    PROGNAME = 'Rolldice'
+    VERSION = '1.0'
+    DEBUG = true
 
+    ## Register component
     SIGNATURE = [
-            'roll',
+            PROGNAME,
             'Donovan C. Young',
-            '0.1',
-            'BSD',
+            VERSION,
+            'GPL3',
             'Rolls the set of dice provided, sending results to the active buffer.',
-            '',
+            'weechat_unload',
             'UTF-8'
     ]
 
-    ### Default Options
+    ## Roll command component
+    ROLL = [
+            'roll',
+            'Generates a random result based upon the given dice set',
+            '[dice]',
+            "dice:   die set to roll using the following syntax: #d#[+-#|%]\n\n" +
+            "        The first # is an integer representing the number of dice to use followed by a literal 'd'" +
+                     "  (If not provided a 1 will be presumed).\n" +
+            "        The next # represents the sides of each dice followed by an optional modifier.\n" +
+            "        - Modifiers can be a + or - followed by an integer." +
+                    "  This number will be added or subtracted after the random roll is generated\n" +
+            "        - Alternatively, a literal '%' may be used to indicate you wish a percentage roll" +
+                    "  (only valid for 2d10 or d100)\n\n" +
+            "        If no dice are provided, the default set from the options will be used\n",
+            '',
+            'rollem',
+            ''
+    ]
+
     DEFAULT_OPTIONS = {
-            :enabled                => 'on',
-            :die                    => '2d10%',
-            :auto_respond           => 'off',
-            :auto_respond_when_away => 'off',
-            :auto_respond_trigger   => '!roll',
-            :ignore_filter          => ''
+            :enabled                => [ 'on'   , 'Enable to Disable this plugin' ],
+            :die                    => [ '2d10' , 'The default die set to use' ],
+            :auto_respond           => [ 'off'  , 'Should we auto respond to trigger command?' ],
+            :auto_respond_when_away => [ 'off'  , 'Should we auto respond when away?' ],
+            :auto_respond_trigger   => [ '!roll', 'The command we should listen for -- be careful what you use!' ],
+            :ignore_filter          => [ ''     , 'Regex of things to ignore (Nicks, etc) when auto responding' ]
     }
 
 
@@ -105,13 +123,16 @@ class Rolldice
     ###
     def initialize
 
-        DEFAULT_OPTIONS.each_pair do |option, value|
+        DEFAULT_OPTIONS.each_pair do |option, value_array|
+
+            (value, desc) = value_array
 
             # install default options if needed.
             #
             if Weechat.config_is_set_plugin( option.to_s ).zero?
                 self.print_info "Setting value '%s' to %p" % [ option, value ] if DEBUG
                 Weechat.config_set_plugin( option.to_s, value.to_s )
+                Weechat.config_set_desc_plugin( option.to_s, desc.to_s )
             end
 
             # read in existing config values, attaching
@@ -123,6 +144,7 @@ class Rolldice
             self.class.send( :attr, option.to_sym, true )
         end
 
+        self.print_info "#{PROGNAME} v.#{VERSION} loaded"
         self.print_info "The die is cast, we're ready to /roll!"
     end
 
@@ -137,18 +159,7 @@ class Rolldice
     def config_changed( data, option, new_value )
         option = option.match( /\.(\w+)$/ )[1]
         new_value.extend( Truthy )
-
-        case option
-            # Dynamically enable/disable the script
-            when 'enabled'
-                self.enabled = new_value
-                new_value.true? ? self.bind : self.unbind
-
-            # ... just change the setting, no validation/action needed.
-            else
-                instance_variable_set( "@#{option}".to_sym, new_value )
-        end
-
+        instance_variable_set( "@#{option}".to_sym, new_value )
         return WEECHAT_RC_OK
     end
 
@@ -156,7 +167,7 @@ class Rolldice
     ### Process all incoming messages, filtering out anything we're not
     ### interested in seeing.
     ###
-    def notify_msg( data, buffer, date, tags, visible, highlight, prefix, message )
+    def check_buffer( data, buffer, date, tags, visible, highlight, prefix, message )
 
         return WEECHAT_RC_OK unless self.enabled.true?
         return WEECHAT_RC_OK unless self.auto_respond.true?
@@ -178,7 +189,9 @@ class Rolldice
 
         # Look for the trigger
         if messages =~ /^#{self.auto_respond_trigger}\s/
-            self.print_info( self.roll_die messages.split[1] )
+            dice = messages.split[1]
+            self.print_info "Auto-Rolling %s" % [ dice ] if DEBUG
+            self.roll_die dice
         end
 
         return WEECHAT_RC_OK
@@ -189,19 +202,67 @@ class Rolldice
     end
 
 
-    ########################################################################
-    ### I N S T A N C E   M E T H O D S
-    ########################################################################
-
-    ### Connect to the RabbitMQ broker.
+    ### Roll random dice
     ###
-    def roll_die
-        return unless self.enabled.true?
-        self.print_info "The die roll goes here"
+
+    def rollem( data, buffer, args )
+        return WEECHAT_RC_OK unless self.enabled.true?
+
+        Weechat.command Weechat.current_buffer(), self.roll_die( args )
 
         return WEECHAT_RC_OK
     end
 
+    ########################################################################
+    ### I N S T A N C E   M E T H O D S
+    ########################################################################
+
+    def roll_die( diceset )
+        diceset = self.die if diceset.empty?
+        score = 0
+
+        set = diceset.match( /(\d*)d(\d*)(([+-]\d+)|(%))?/ )
+        ( throws, sides, modifier ) = set[1..3]
+
+        if modifier
+            op = modifier[0]
+            mod = modifier[1..-1].to_i
+        end
+
+        throws = throws.to_i
+        throws = 1 if throws <= 0
+        if throws > 100
+            self.print "Too many throws, try a number between 1 and 100"
+            return
+        end
+
+        sides  = sides.to_i
+        sides  = 100 if sides <= 0
+
+        self.print "Rolling %i of d%i %s" % [ throws, sides, modifier ]
+
+        results = throws.times.map{ 1 + Random.rand(sides) }
+
+        if op == '%' && ( ( throws == 2 && sides == 10 ) || ( throws == 1 && sides === 100 ) )
+            score = ( (results[0]*10) + results[1] ).to_s + '%' if ( throws == 2 )
+            score = results[0].to_s + '%' if ( throws == 1 )
+            score_message = "#{results[0]}+#{results[1]}"
+        else
+            score_message = String.new
+            results.each do |num|
+                score += num
+                score_message += "+#{num}"
+            end
+            if op =~ /[+-]/
+                score = eval("#{score}#{op}#{mod}")
+                score_message += "#{op}#{mod}"
+            end
+            score_message = score_message[1..-1]
+        end
+        score_message += "=#{score}"
+
+        return score_message
+    end
 
     ### Disable the plugin on repeated error.
     ###
@@ -209,7 +270,6 @@ class Rolldice
         self.print_info "Disabling plugin due to error: %s" % [ reason ]
         Weechat.config_set_plugin( 'enabled', 'off' )
     end
-
 
 
     #########
@@ -224,6 +284,10 @@ class Rolldice
                 msg
         ]
     end
+
+    def print( msg )
+        Weechat.print( Weechat.current_buffer(), msg )
+    end
 end
 
 
@@ -231,12 +295,16 @@ end
 ### Weechat entry point.
 ###
 def weechat_init
-    #require 'rubygems'
+    require 'rubygems'
 
     Weechat::register *Rolldice::SIGNATURE
     $dice = Rolldice.new
-    Weechat.hook_print( '', '', '', 1, 'notify_msg', '' )
+
+    Weechat.hook_command *Rolldice::ROLL
     Weechat.hook_config( 'plugins.var.ruby.rolldice.*', 'config_changed', '' )
+
+    #Weechat.hook_print( '', '', '', 1, 'notify_msg', '' )
+
 
     return Weechat::WEECHAT_RC_OK
 
@@ -250,10 +318,24 @@ rescue LoadError => err
     return Weechat::WEECHAT_RC_ERROR
 end
 
+### Hook for manually unloading this script.
+###
+def weechat_unload
+    Weechat.unhook_all()
+    return Weechat::WEECHAT_RC_OK
+end
+
+
+### Allow Weechat namespace callbacks to forward to the Roledice object.
+###
+require 'forwardable'
+extend Forwardable
+def_delegators :$dice, :check_buffer, :config_changed, :rollem
+
 __END__
 __LICENSE__
 
-Copyright (c) 2011, Mahlon E. Smith <mahlon@martini.nu>
+Copyright (c) 2013, Donovan C. Young <dyoung522@gmail.com>
 
 All rights reserved.
 
