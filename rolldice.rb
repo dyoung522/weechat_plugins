@@ -76,7 +76,7 @@ class Rolldice
     include Weechat
 
     PROGNAME = 'Rolldice'
-    VERSION = '1.2'
+    VERSION = '1.5'
     DEBUG = true
 
     ## Register component
@@ -174,24 +174,22 @@ class Rolldice
 
         # Should we respond when away?
         away = (Weechat.buffer_get_string( buffer, "localvar_away" )).empty? ? false : true
-        return WEECHAT_RC_OK unless away && self.auto_respond_when_away.true?
+        return WEECHAT_RC_OK if away && !self.auto_respond_when_away.true?
 
         # Are we specifically ignoring this message?
         filters = self.ignore_filter.split( ',' )
-
-        return WEECHAT_RC_OK if filters.empty?
         filters.each.to_s do |filter|
             if message =~ /#{filter}/
-                self.print_info "Ignorning %s" % [ filter ] if DEBUG
+                self.print_info "Ignorning %s" % [ filter ]
                 return WEECHAT_RC_OK
             end
         end
 
         # Look for the trigger
-        if messages =~ /^#{self.auto_respond_trigger}\s/
-            dice = messages.split[1]
-            self.print_info "Auto-Rolling %s" % [ dice ] if DEBUG
-            self.roll_die dice
+        if message =~ /^#{self.auto_respond_trigger}\b/
+            dice = message.split[1] || self.die
+            self.print "Auto-Rolling %s" % [ dice ]
+            Weechat.command buffer, self.roll_die( dice )
         end
 
         return WEECHAT_RC_OK
@@ -315,9 +313,7 @@ def weechat_init
 
     Weechat.hook_command *Rolldice::ROLL
     Weechat.hook_config( 'plugins.var.ruby.rolldice.*', 'config_changed', '' )
-
-    #Weechat.hook_print( '', '', '', 1, 'notify_msg', '' )
-
+    Weechat.hook_print( '', '', '', 1, 'check_buffer', '' )
 
     return Weechat::WEECHAT_RC_OK
 
