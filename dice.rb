@@ -81,7 +81,7 @@ class Dice
     include Weechat
 
     PROGNAME = 'Dice'
-    VERSION = '1.7'
+    VERSION = '1.7.1'
     DEBUG = true
 
     ## Register component
@@ -285,15 +285,23 @@ class Dice
         end
 
         # Print a message only to the local screen, describing what we're about to do
-        self.print buffer, "Rolling %i of d%i %s" % [ throws, sides, modifier ]
+        self.print buffer, "Rolling %i of d%i %s" % [ throws, sides, modifier ] if DEBUG
 
-        # Generate the random rolls
+        # Generate the random rolls - add one because rand is zero based
         results = throws.times.map{ 1 + Random.rand(sides) }
 
         # Generate percentage roll or add modifier as needed
         if op == '%' && ( ( throws == 2 && sides == 10 ) || ( throws == 1 && sides === 100 ) )
             if ( throws == 2 )
-                score = ( (results[0]*10) + results[1] ).to_s + '%'
+                # Use 0-9 instead of 1-10
+                results.map! { |num| num-1 }
+
+                # Calculate the result, first die is the 10's the second die is the 1's
+                score = ((results[0]*10) + results[1]).to_s + '%'
+
+                # Exception, if both are 0 it's a 100
+                score = '100%' if results[0] + results[1] == 0
+
                 score_message = "#{results[0]}+#{results[1]}"
             else
                 score = results[0].to_s + '%'
@@ -311,9 +319,10 @@ class Dice
                 score = eval("#{score}#{op}#{mod}")
                 score_message = "(#{score_message})#{op}#{mod}"
             end
+            score_message = '' if ( throws == 1 && modifier.nil? )
         end
         # Format the final message back to the buffer
-        score_message += "%s%s" % [ ( op == '%' && throws == 1 ) ? '' : '= ', score ]
+        score_message = "[%s] %s%s%s" % [ diceset, score_message, ( op == '%' && throws == 1 ) ? '' : ' = ', score ]
 
         # Return the result string
         return score_message
