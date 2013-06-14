@@ -76,7 +76,7 @@ class Rolldice
     include Weechat
 
     PROGNAME = 'Rolldice'
-    VERSION = '1.0'
+    VERSION = '1.2'
     DEBUG = true
 
     ## Register component
@@ -219,16 +219,19 @@ class Rolldice
 
     def roll_die( diceset )
         diceset = self.die if diceset.empty?
+        score_message = ''
         score = 0
 
         set = diceset.match( /(\d*)d(\d*)(([+-]\d+)|(%))?/ )
         ( throws, sides, modifier ) = set[1..3]
 
+        # Parse modifier into it's components
         if modifier
             op = modifier[0]
             mod = modifier[1..-1].to_i
         end
 
+        # Validate and convert all arguments into integers (when appropriate)
         throws = throws.to_i
         throws = 1 if throws <= 0
         if throws > 100
@@ -239,28 +242,38 @@ class Rolldice
         sides  = sides.to_i
         sides  = 100 if sides <= 0
 
+        # Print a message only to the local screen, describing what we're about to do
         self.print "Rolling %i of d%i %s" % [ throws, sides, modifier ]
 
+        # Generate the random rolls
         results = throws.times.map{ 1 + Random.rand(sides) }
 
+        # Generate percentage roll or add modifier as needed
         if op == '%' && ( ( throws == 2 && sides == 10 ) || ( throws == 1 && sides === 100 ) )
-            score = ( (results[0]*10) + results[1] ).to_s + '%' if ( throws == 2 )
-            score = results[0].to_s + '%' if ( throws == 1 )
-            score_message = "#{results[0]}+#{results[1]}"
-        else
-            score_message = String.new
+            if ( throws == 2 )
+                score = ( (results[0]*10) + results[1] ).to_s + '%'
+                score_message = "#{results[0]}+#{results[1]}"
+            else
+                score = results[0].to_s + '%'
+            end
+        else    # Just add the results together
             results.each do |num|
                 score += num
                 score_message += "+#{num}"
             end
+            # Remove the very first OP symbol
+            score_message = score_message[1..-1]
+
+            # Add the modifier, when provided
             if op =~ /[+-]/
                 score = eval("#{score}#{op}#{mod}")
-                score_message += "#{op}#{mod}"
+                score_message = "(#{score_message})#{op}#{mod}"
             end
-            score_message = score_message[1..-1]
         end
-        score_message += "=#{score}"
+        # Format the final message back to the buffer
+        score_message += "%s%s" % [ ( op == '%' && throws == 1 ) ? '' : '=', score ]
 
+        # Return the result string
         return score_message
     end
 
