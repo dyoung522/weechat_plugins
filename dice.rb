@@ -110,7 +110,7 @@ class Dice
                     "  (only valid for 2d10 or d100)\n\n" +
             "        If no dice are provided, the default set from the options will be used\n",
             '',
-            'rollem',
+            'roll',
             ''
     ]
 
@@ -235,7 +235,7 @@ class Dice
 
     ### Roll random dice
     ###
-    def rollem( data, buffer, dice )
+    def roll( data, buffer, dice )
         return WEECHAT_RC_OK unless self.enabled.true?
 
         roll = self.roll_die( dice, buffer )
@@ -380,7 +380,7 @@ end
 ###
 require 'forwardable'
 extend Forwardable
-def_delegators :$dice, :check_buffer, :config_changed, :rollem
+def_delegators :$dice, :check_buffer, :config_changed, :roll
 
 __END__
 __LICENSE__
