@@ -81,12 +81,12 @@ class Dice
     include Weechat
 
     PROGNAME = 'Dice'
-    VERSION = '1.7.1'
+    VERSION = '1.7.4'
     DEBUG = true
 
     ## Register component
     SIGNATURE = [
-            PROGNAME,
+            PROGNAME.downcase,
             'Donovan C. Young',
             VERSION,
             'GPL3',
@@ -186,12 +186,16 @@ class Dice
         # Build tags array
         tags = tags.split(',')
 
+        # Strip special chars from current nick
+        nick = prefix.gsub(/[@+]/, '')
+
         #if DEBUG
         #    self.print_info "DATA: #{data}"
         #    self.print_info "DATE: #{date}"
         #    self.print_info "visible: #{visible}"
         #    self.print_info "highlight: #{highlight}"
         #    self.print_info "prefix: #{prefix}"
+        #    self.print_info "nick: #{nick}"
         #    self.print_info "message: #{message}"
         #    self.print_info "TAGS: #{tags}"
         #    self.print_info "filters: Nicks:    #{filter_nicks}"
@@ -211,7 +215,7 @@ class Dice
             filter_nicks.each do |filter|
                 next if filter.empty?
                 if prefix =~ /#{filter}/i
-                    self.print buffer, "Ignorning autoroll request from %s (matching %s)" % [ prefix, filter ] if DEBUG
+                    self.print buffer, "Ignorning autoroll request from %s (matching %s)" % [ nick, filter ] if DEBUG
                     return WEECHAT_RC_OK
                 end
             end
@@ -222,7 +226,7 @@ class Dice
             self.print buffer, "Auto-Rolling %s" % [ dice ]
 
             roll = self.roll_die( dice, buffer )
-            Weechat.command( buffer, roll ) if roll
+            Weechat.command( buffer, ( "%s: %s" % [ nick, roll ] ) ) if roll
         end
 
         return WEECHAT_RC_OK
@@ -321,11 +325,9 @@ class Dice
             end
             score_message = '' if ( throws == 1 && modifier.nil? )
         end
-        # Format the final message back to the buffer
-        score_message = "[%s] %s%s%s" % [ diceset, score_message, ( op == '%' && throws == 1 ) ? '' : ' = ', score ]
 
-        # Return the result string
-        return score_message
+        # Format the final message and return it
+        return "[%s] %s%s%s" % [ diceset, score_message, ( op == '%' && throws == 1 ) ? '' : ' = ', score ]
     end
 
     ### Disable the plugin on repeated error.
