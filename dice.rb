@@ -7,7 +7,10 @@
 # Dice
 # ----
 #
-# Rolls a set of dice as provided, returning the result.
+# Adds a /roll command which will randomly roll a set of dice based upon the standard #d# syntax, sending the results to the current buffer.
+# See /help roll within weechat for more info.
+# 
+# Optionally, will also respond to a channel filter (see plugins.var.ruby.dice.auto_respond_trigger below for more).
 #
 # Install instructions:
 # ---------------------
@@ -81,7 +84,7 @@ class Dice
     include Weechat
 
     PROGNAME = 'Dice'
-    VERSION = '1.0'
+    VERSION = '1.0.1'
 
     DEBUG = false
 
