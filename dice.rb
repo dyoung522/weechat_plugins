@@ -81,8 +81,9 @@ class Dice
     include Weechat
 
     PROGNAME = 'Dice'
-    VERSION = '1.7.4'
-    DEBUG = true
+    VERSION = '1.0'
+
+    DEBUG = false
 
     ## Register component
     SIGNATURE = [
@@ -108,7 +109,11 @@ class Dice
                     "  This number will be added or subtracted after the random roll is generated\n" +
             "        - Alternatively, a literal '%' may be used to indicate you wish a percentage roll" +
                     "  (only valid for 2d10 or d100)\n\n" +
-            "        If no dice are provided, the default set from the options will be used\n",
+            "        If no dice are provided, the default set from the options will be used\n\n" +
+            "        Examples:  /roll 2d10  --> Rolls 2 10-sided dice and adds the results together.\n" +
+            "                   /roll 2d6+4 --> This would roll 2 6-sided dice, add the results, and then add 4 to that.\n" +
+            "                   /roll 2d10% --> Rolls 2 10-sided dice, uses the first at the 10's and the second as the 1's to produce a percent.\n" +
+            "                   /roll d%    --> Rolls 1 100-sided die as a percentage (1-100%).\n",
             '',
             'roll',
             ''
@@ -179,60 +184,69 @@ class Dice
         return WEECHAT_RC_OK unless self.enabled.true?
         return WEECHAT_RC_OK unless self.auto_respond.true?
 
+        ### Set variables
+        ###
         # Build our ignore filters array (depending on if multiple enteries were given)
         filter_nicks = self.ignore_nicks =~ /,/ ? self.ignore_nicks.split(',') : [ self.ignore_nicks ]
         filter_channels = self.ignore_channels =~ /,/ ? self.ignore_channels.split(',') : [ self.ignore_channels ]
 
-        # Build tags array
-        tags = tags.split(',')
+        tags = tags.split(',') # Build tags array
+        away = (Weechat.buffer_get_string( buffer, 'localvar_away' )).empty? ? false : true # Are we currently set away?
+        current_nick = prefix.gsub(/^[@+]?/, '') # Grab the nick the request came from and strip any special chars from it
+        current_channel = Weechat.buffer_get_string( buffer, 'localvar_channel' ) # Get the channel that the request came in on
 
-        # Strip special chars from current nick
-        nick = prefix.gsub(/[@+]/, '')
+        if false # set TRUE to debug
+            self.print_info "away:    #{p away}"
+            self.print_info "nick:    #{current_nick}"
+            self.print_info "channel: #{current_channel}"
+            self.print_info "filters:    Nicks: #{filter_nicks}"
+            self.print_info "         Channels: #{filter_channels}"
 
-        #if DEBUG
-        #    self.print_info "DATA: #{data}"
-        #    self.print_info "DATE: #{date}"
-        #    self.print_info "visible: #{visible}"
-        #    self.print_info "highlight: #{highlight}"
-        #    self.print_info "prefix: #{prefix}"
-        #    self.print_info "nick: #{nick}"
-        #    self.print_info "message: #{message}"
-        #    self.print_info "TAGS: #{tags}"
-        #    self.print_info "filters: Nicks:    #{filter_nicks}"
-        #    self.print_info "         Channels: #{filter_channels}"
-        #end
+            # ARGS
+            self.print_info "DATA:      #{data}"
+            self.print_info "BUFFER:    #{buffer}"
+            self.print_info "DATE:      #{date}"
+            self.print_info "TAGS:      #{tags}"
+            self.print_info "VISIBLE:   #{visible}"
+            self.print_info "HIGHLIGHT: #{highlight}"
+            self.print_info "PREFIX:    #{prefix}"
+            self.print_info "MESSAGE:   #{message}"
+        end
 
+        # ignore everything except irc message buffer
         return WEECHAT_RC_OK unless tags[0] == 'irc_privmsg'
 
         # Should we respond when away?
-        away = (Weechat.buffer_get_string( buffer, "localvar_away" )).empty? ? false : true
         return WEECHAT_RC_OK if away && !self.auto_respond_when_away.true?
 
-        # Look for the trigger
+        # We got this far, so Look for the trigger
         if message =~ /^#{self.auto_respond_trigger}\b/
 
+            # Are we specifically ignoring this channel?
+            if self.filtered?( filter_channels, current_channel )
+                self.print( buffer, "Ignorning request from #{current_channel} [Channel Ignore]" ) if DEBUG
+                return WEECHAT_RC_OK
+            end
+
             # Are we specifically ignoring this user?
-            filter_nicks.each do |filter|
-                next if filter.empty?
-                if prefix =~ /#{filter}/i
-                    self.print buffer, "Ignorning autoroll request from %s (matching %s)" % [ nick, filter ] if DEBUG
-                    return WEECHAT_RC_OK
-                end
+            if self.filtered?( filter_nicks, current_nick )
+                self.print( buffer, "Ignorning request from #{current_nick} [Nick Ignore]" ) if DEBUG
+                return WEECHAT_RC_OK
             end
 
             # GTG - Roll 'em
             dice = message.split[1] || self.die
 
-            self.print buffer, "Auto-Rolling %s" % [ dice ]
+            self.print buffer, "Auto-Rolling %s" % [ dice ] if DEBUG
 
             roll = self.roll_die( dice, buffer )
-            Weechat.command( buffer, ( "%s: %s" % [ nick, roll ] ) ) if roll
+            Weechat.command( buffer, ( "%s: %s" % [ current_nick, roll ] ) ) if roll
         end
 
         return WEECHAT_RC_OK
 
     rescue => err
-        self.disable "%s, %s" % [ err.class.name, err.message ] unless DEBUG
+        self.disable "%s, %s" % [ err.class.name, err.message ] 
         return WEECHAT_RC_OK
     end
 
@@ -333,8 +347,10 @@ class Dice
     ### Disable the plugin on repeated error.
     ###
     def disable( reason )
-        self.print_info "Disabling plugin due to error: %s" % [ reason ]
-        Weechat.config_set_plugin( 'enabled', 'off' )
+        unless DEBUG
+            self.print_info "Disabling plugin due to error: %s" % [ reason ]
+            Weechat.config_set_plugin( 'enabled', 'off' )
+        end
     end
 
 
@@ -350,6 +366,14 @@ class Dice
 
     def print( buffer, msg )
         Weechat.print buffer, "%s***\t%s%s" % [ Weechat.color('yellow'), Weechat.color('white'), msg ]
+    end
+
+    def filtered?(filters, match)
+        filters.each do |filter|
+            next if filter.empty?
+            return true if match =~ /#{filter}/i
+        end
+        return
     end
 end
 
