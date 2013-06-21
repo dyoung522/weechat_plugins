@@ -32,7 +32,7 @@
 
 $PROGNAME    = 'OpenWeather'
 $AUTHOR      = 'Donovan C. Young'
-$VERSION     = '1.2.2'
+$VERSION     = '1.2.3'
 $DESCRIPTION = 'Provides current weather forecast using api.openweathermap.com'
 
 ### The actual Weechat script.
@@ -41,7 +41,7 @@ class OpenWeather
     include Weechat
 
     # true or false
-    DEBUG = true
+    DEBUG = false
 
     ## Register component
     SIGNATURE = [
