@@ -32,7 +32,7 @@
 
 $PROGNAME    = 'OpenWeather'
 $AUTHOR      = 'Donovan C. Young'
-$VERSION     = '1.2.1'
+$VERSION     = '1.2.2'
 $DESCRIPTION = 'Provides current weather forecast using api.openweathermap.com'
 
 ### The actual Weechat script.
@@ -126,6 +126,11 @@ class OpenWeather
         city = args
         city = self.default_city if city.empty?
         city = city.gsub(/ /, '%20')
+
+        if city.empty?
+            self.print buffer, "You must supply a city, either as an argument or via the default_city plugin variable."
+            return WEECHAT_RC_OK
+        end
 
         doc = JSON.parse(
                 xml = open('http://api.openweathermap.org/data/2.5/find?q=%s&units=%s&mode=json&type=acurate' % [ city, units ]).read
